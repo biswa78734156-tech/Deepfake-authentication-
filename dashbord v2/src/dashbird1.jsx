@@ -6,7 +6,7 @@ import {
   Folder, Home, Calendar, BarChart2, Users, MessageSquare, Settings, User, LogOut,
   Search, Bell, Clock, Plus, ArrowUpRight, TrendingUp, ArrowRight, Edit3, Cloud,
   CheckCircle2, Sparkles, Send, Download, FileText, Check, ShieldCheck,
-  Upload, Shield, AlertTriangle, Mic, X, RefreshCw
+  Upload, Shield, AlertTriangle, Mic, X, RefreshCw, Image as ImageIcon, Paperclip
 } from 'lucide-react';
 import './dashbord1.css';
 
@@ -84,6 +84,163 @@ const PROCESSING_STEPS = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Formatted Report Bubble Helper (Markdown / Threat Report Parser)
+// ─────────────────────────────────────────────────────────────────────────────
+function FormattedReportBubble({ text }) {
+  if (!text) return null;
+
+  const lines = text.split('\n');
+  const elements = [];
+  let inList = false;
+  let listItems = [];
+  let inCodeBlock = false;
+  let codeBlockLines = [];
+
+  const flushList = () => {
+    if (listItems.length > 0) {
+      elements.push(
+        <ul key={`list-${elements.length}`} className="report-list">
+          {listItems.map((item, idx) => (
+            <li key={idx}>{parseInlineText(item)}</li>
+          ))}
+        </ul>
+      );
+      listItems = [];
+      inList = false;
+    }
+  };
+
+  const flushCode = () => {
+    if (codeBlockLines.length > 0) {
+      elements.push(
+        <pre key={`code-${elements.length}`} className="report-pre">
+          <code>{codeBlockLines.join('\n')}</code>
+        </pre>
+      );
+      codeBlockLines = [];
+      inCodeBlock = false;
+    }
+  };
+
+  const parseInlineText = (str) => {
+    if (!str) return '';
+    // Handle inline code and bold
+    const parts = str.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('`') && part.endsWith('`')) {
+        return <code key={i} className="report-code">{part.slice(1, -1)}</code>;
+      }
+    if (part.startsWith('**') && part.endsWith('**')) {
+        const inner = part.slice(2, -2);
+        const lower = inner.toLowerCase();
+        
+        // Full warning banners
+        if (lower.includes('suspicious message') || lower.includes('critical risk —') || lower.includes('fraud detected')) {
+          return (
+            <div key={i} className="report-warning-banner high">
+              {inner}
+            </div>
+          );
+        }
+        if (lower.includes('benign') || lower.includes('low risk communication')) {
+          return (
+            <div key={i} className="report-warning-banner clean">
+              {inner}
+            </div>
+          );
+        }
+
+        // Risk badge pills
+        if (lower.includes('critical')) {
+          return <span key={i} className="report-badge-pill critical">{inner}</span>;
+        }
+        if (lower.includes('high')) {
+          return <span key={i} className="report-badge-pill high">{inner}</span>;
+        }
+        if (lower.includes('medium') || lower.includes('review required')) {
+          return <span key={i} className="report-badge-pill medium">{inner}</span>;
+        }
+        if (lower.includes('guarded')) {
+          return <span key={i} className="report-badge-pill guarded">{inner}</span>;
+        }
+        if (lower.includes('low') || lower.includes('clean')) {
+          return <span key={i} className="report-badge-pill low">{inner}</span>;
+        }
+
+        return <strong key={i}>{inner}</strong>;
+      }
+      return part;
+    });
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.startsWith('```')) {
+      if (inCodeBlock) {
+        flushCode();
+      } else {
+        flushList();
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBlockLines.push(line);
+      continue;
+    }
+
+    if (line.startsWith('### ')) {
+      flushList();
+      elements.push(
+        <div key={`h3-${i}`} className="report-h3">
+          {parseInlineText(line.replace('### ', ''))}
+        </div>
+      );
+      continue;
+    }
+
+    if (line.startsWith('#### ')) {
+      flushList();
+      elements.push(
+        <div key={`h4-${i}`} className="report-h4">
+          {parseInlineText(line.replace('#### ', ''))}
+        </div>
+      );
+      continue;
+    }
+
+    if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+      listItems.push(line.trim().substring(2));
+      inList = true;
+      continue;
+    }
+
+    if (/^\d+\.\s/.test(line.trim())) {
+      listItems.push(line.trim().replace(/^\d+\.\s*/, ''));
+      inList = true;
+      continue;
+    }
+
+    flushList();
+
+    if (line.trim().length > 0) {
+      elements.push(
+        <p key={`p-${i}`} style={{ margin: '3px 0 5px', lineHeight: 1.45 }}>
+          {parseInlineText(line)}
+        </p>
+      );
+    }
+  }
+
+  flushList();
+  flushCode();
+
+  return <div>{elements}</div>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Lottie baby animation (header decoration — unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 function CuteBabyGirlAnimation() {
@@ -115,12 +272,61 @@ export default function Dashboard() {
   );
   const [scoopY, setScoopY] = useState(136);
   const [toastMessage, setToastMessage] = useState('');
-  const [messages, setMessages] = useState([
-    { id: 1, sender: 'Sarah Miller', text: 'Hey Thomas! The new bento dashboard looks incredible', time: '10:25 AM', fromMe: false },
-    { id: 2, sender: 'Thomas', text: 'Thanks Sarah! Just refined the liquid spring sidebar.', time: '10:30 AM', fromMe: true },
-    { id: 3, sender: 'Alex Chen', text: 'Are the weekly task statistics updated for March?', time: '10:34 AM', fromMe: false },
-  ]);
+  const [activeThread, setActiveThread] = useState('cyberguard');
+  const [threadMessages, setThreadMessages] = useState({
+    cyberguard: [
+      {
+        id: 1,
+        sender: 'CYBERGUARD AI',
+        text: `### 🛡️ CYBERGUARD Security Operations Center
+Welcome Thomas! I am your AI cybersecurity assistant and threat-intelligence analyst.
+
+#### 🎯 Active Capabilities
+- **Phishing Email & SMS Triage**: Paste suspicious emails, SMS messages, or fake invoices.
+- **URL & Domain Reputation**: Check suspicious links against Google Safe Browsing and heuristic reputation metrics.
+- **Scam Screenshot Inspection**: Attach a screenshot of any message, banking portal, or popup to analyze visual scam indicators.
+- **Voice Impersonation Forensics**: Attach audio recordings to assess voice cloning and social engineering risks.
+- **Cybersecurity Advisory**: Ask questions regarding 2FA, data breaches, zero-days, or enterprise hygiene.
+
+*Type a message below or use the attachment buttons to begin.*`,
+        time: '10:20 AM',
+        fromMe: false,
+        isReport: true,
+      },
+    ],
+    sarah: [
+      { id: 101, sender: 'Sarah Miller', text: 'Hey Thomas! The new bento dashboard looks incredible', time: '10:25 AM', fromMe: false },
+      { id: 102, sender: 'Thomas', text: 'Thanks Sarah! Just refined the liquid spring sidebar.', time: '10:30 AM', fromMe: true },
+      { id: 103, sender: 'Sarah Miller', text: 'The liquid scoop looks so smooth! Great job.', time: '10:32 AM', fromMe: false },
+    ],
+    alex: [
+      { id: 201, sender: 'Alex Chen', text: 'Are the weekly task statistics updated for March?', time: '10:34 AM', fromMe: false },
+    ],
+    design: [
+      { id: 301, sender: 'Design Team', text: 'Sprint review tomorrow 9 AM in Room A.', time: '09:00 AM', fromMe: false },
+    ],
+  });
   const [newMsg, setNewMsg] = useState('');
+  const [chatAttachedFile, setChatAttachedFile] = useState(null);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatLoadingText, setChatLoadingText] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+  const chatInputRef = useRef(null);
+
+  useEffect(() => {
+    if (isChatLoading) {
+      const timer = setTimeout(() => {
+        setIsChatLoading(false);
+        setChatLoadingText('');
+      }, 20000);
+      return () => clearTimeout(timer);
+    }
+  }, [isChatLoading]);
+
+  const chatMessagesEndRef = useRef(null);
+  const chatImageInputRef = useRef(null);
+  const chatAudioInputRef = useRef(null);
   const [selectedDay, setSelectedDay] = useState('Mon');
   const [settingsForm, setSettingsForm] = useState({
     name: 'Thomas Anderson',
@@ -191,11 +397,288 @@ export default function Dashboard() {
     setTimeout(() => setToastMessage(''), 2500);
   };
 
-  const handleSendMessage = (e) => {
-    e.preventDefault();
-    if (!newMsg.trim()) return;
-    setMessages(prev => [...prev, { id: Date.now(), sender: 'Thomas', text: newMsg, time: '10:38 AM', fromMe: true }]);
+  const scrollToChatBottom = () => {
+    setTimeout(() => {
+      if (chatMessagesEndRef.current) {
+        chatMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 80);
+  };
+
+  const handleChatFileSelect = (e, fileType) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    if (fileType === 'image') {
+      const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      if (!allowed.includes(file.type)) {
+        showToast('Please upload a JPG, PNG, or WebP screenshot.');
+        return;
+      }
+      setChatAttachedFile({
+        file,
+        type: 'image',
+        name: file.name,
+        size: formatFileSize(file.size),
+        previewUrl: URL.createObjectURL(file),
+      });
+      showToast(`Attached screenshot: ${file.name}`);
+    } else if (fileType === 'audio') {
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (!['wav', 'mp3', 'aac', 'm4a', 'ogg', 'mp4'].includes(ext)) {
+        showToast('Please upload a WAV, MP3, AAC, M4A, or OGG audio file.');
+        return;
+      }
+      setChatAttachedFile({
+        file,
+        type: 'audio',
+        name: file.name,
+        size: formatFileSize(file.size),
+        previewUrl: null,
+      });
+      showToast(`Attached audio: ${file.name}`);
+    }
+
+    if (e.target) e.target.value = '';
+  };
+
+  const handleRemoveAttachment = () => {
+    if (chatAttachedFile && chatAttachedFile.previewUrl) {
+      URL.revokeObjectURL(chatAttachedFile.previewUrl);
+    }
+    setChatAttachedFile(null);
+  };
+
+  const handleToggleVoiceInput = () => {
+    const SpeechRecognition = typeof window !== 'undefined'
+      ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+      : null;
+
+    if (!SpeechRecognition) {
+      chatAudioInputRef.current?.click();
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+      }
+      setIsListening(false);
+      showToast('Microphone stopped.');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        showToast('🎤 Listening... Speak now');
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript) {
+          setNewMsg(prev => (prev ? prev.trim() + ' ' + transcript : transcript));
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('Speech recognition notice:', event.error);
+        setIsListening(false);
+        if (event.error !== 'no-speech') {
+          showToast(`Mic: ${event.error}. Right-click to upload audio file.`);
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn('Speech recognition failed to start:', err);
+      chatAudioInputRef.current?.click();
+    }
+  };
+
+  const handleSendMessage = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!newMsg.trim() && !chatAttachedFile) return;
+
+    const userText = newMsg.trim();
+    const attached = chatAttachedFile;
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Append user message to active thread
+    const userMessageObj = {
+      id: Date.now(),
+      sender: 'Thomas',
+      text: userText,
+      attachedFile: attached,
+      time: nowTime,
+      fromMe: true,
+    };
+
+    setThreadMessages(prev => ({
+      ...prev,
+      [activeThread]: [...(prev[activeThread] || []), userMessageObj],
+    }));
+
     setNewMsg('');
+    setChatAttachedFile(null);
+    // Reset textarea height
+    if (chatInputRef.current) {
+      chatInputRef.current.style.height = '22px';
+    }
+    scrollToChatBottom();
+
+    // If in team thread (Sarah, Alex, Design), reply with team responses
+    if (activeThread !== 'cyberguard') {
+      setTimeout(() => {
+        const replyMap = {
+          sarah: "Thanks Thomas! I'll test the frontend layout on the latest build.",
+          alex: "Noted! Adding this to our weekly product sync agenda.",
+          design: "Received. Let's review during the morning design standup.",
+        };
+        const replyText = replyMap[activeThread] || 'Message received!';
+        setThreadMessages(prev => ({
+          ...prev,
+          [activeThread]: [
+            ...(prev[activeThread] || []),
+            {
+              id: Date.now() + 1,
+              sender: activeThread === 'sarah' ? 'Sarah Miller' : activeThread === 'alex' ? 'Alex Chen' : 'Design Team',
+              text: replyText,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              fromMe: false,
+            },
+          ],
+        }));
+        scrollToChatBottom();
+      }, 700);
+      return;
+    }
+
+    // In CYBERGUARD AI thread — communicate with backend!
+    setIsChatLoading(true);
+
+    try {
+      if (attached && attached.type === 'image') {
+        setChatLoadingText('CYBERGUARD AI is analyzing screenshot for fraud indicators...');
+        const formData = new FormData();
+        formData.append('image', attached.file);
+        if (userText) formData.append('userMessage', userText);
+
+        const res = await fetch('/api/analyze-image', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await res.json();
+        const replyText = data.reply || data.message || 'Image analysis completed.';
+
+        setThreadMessages(prev => ({
+          ...prev,
+          cyberguard: [
+            ...(prev.cyberguard || []),
+            {
+              id: Date.now() + 1,
+              sender: 'CYBERGUARD AI',
+              text: replyText,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              fromMe: false,
+              isReport: true,
+            },
+          ],
+        }));
+      } else if (attached && attached.type === 'audio') {
+        setChatLoadingText('CYBERGUARD AI is analyzing audio for voice impersonation...');
+        const formData = new FormData();
+        formData.append('audio', attached.file);
+
+        const res = await fetch('/api/analyze-audio', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await res.json();
+        const replyText = data.reply || (data.result && data.result.formattedReport) || 'Audio analysis completed.';
+
+        setThreadMessages(prev => ({
+          ...prev,
+          cyberguard: [
+            ...(prev.cyberguard || []),
+            {
+              id: Date.now() + 1,
+              sender: 'CYBERGUARD AI',
+              text: replyText,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              fromMe: false,
+              isReport: true,
+            },
+          ],
+        }));
+      } else {
+        setChatLoadingText('CYBERGUARD AI is evaluating threat intelligence...');
+        const history = (threadMessages.cyberguard || [])
+          .slice(-6)
+          .map(m => ({
+            role: m.fromMe ? 'user' : 'model',
+            text: m.text,
+          }));
+
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: userText, history }),
+        });
+
+        const data = await res.json();
+        const replyText = data.reply || data.message || 'Threat evaluation completed.';
+
+        setThreadMessages(prev => ({
+          ...prev,
+          cyberguard: [
+            ...(prev.cyberguard || []),
+            {
+              id: Date.now() + 1,
+              sender: 'CYBERGUARD AI',
+              text: replyText,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              fromMe: false,
+              isReport: replyText.includes('Threat Assessment Report') || replyText.includes('### '),
+            },
+          ],
+        }));
+      }
+    } catch (err) {
+      console.error('Chat error:', err);
+      setThreadMessages(prev => ({
+        ...prev,
+        cyberguard: [
+          ...(prev.cyberguard || []),
+          {
+            id: Date.now() + 1,
+            sender: 'CYBERGUARD AI',
+            text: `⚠️ Communication Notice: Could not connect to the CYBERGUARD security backend (${err.message}). Please verify the backend server is running on port 5001.`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            fromMe: false,
+          },
+        ],
+      }));
+    } finally {
+      setIsChatLoading(false);
+      setChatLoadingText('');
+      scrollToChatBottom();
+    }
   };
 
   const getSidebarPath = (h, y) => {
@@ -461,14 +944,14 @@ export default function Dashboard() {
                     </motion.div>
 
                     <motion.div className="bento-card-add" whileHover={{ scale: 1.02 }}
-                      onClick={() => showToast('Select files or paste a phishing link')}>
+                      onClick={() => { setActiveNav('chat'); setActiveThread('cyberguard'); showToast('Opened CYBERGUARD AI Assistant'); }}>
                       <h3 className="add-widget-title">AI Dropzone /<br />Threat Uploader</h3>
                       <div className="add-widget-plus-btn"><Plus size={24} strokeWidth={2.8} /></div>
                       <p className="uploader-subtext">Upload documents, MP3, JPG, or paste phishing links.</p>
                     </motion.div>
 
                     <motion.div className="bento-card-premium" whileHover={{ scale: 1.02 }}
-                      onClick={() => showToast('Voice impersonation detected')}>
+                      onClick={() => { setActiveNav('chart'); handleFraudModeActivate(); showToast('Voice impersonation audio forensics opened'); }}>
                       <svg className="premium-topo-bg" viewBox="0 0 200 200" fill="none">
                         <path d="M-20 55 Q 60 15, 140 65 T 260 45"  stroke="#ffffff" strokeWidth="1.2" fill="none" />
                         <path d="M-20 95 Q 70 55, 150 105 T 270 85"  stroke="#ffffff" strokeWidth="1.2" fill="none" />
@@ -1079,41 +1562,255 @@ export default function Dashboard() {
                 <motion.div key="chat-view" className="chat-view-container"
                   initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.22 }}>
+
+                  {/* Left panel: Discussions */}
                   <div className="chat-threads-card">
                     <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-dark)' }}>Discussions</span>
-                    <div className="chat-thread-item active">
+
+                    {/* CYBERGUARD AI Thread */}
+                    <div
+                      className={`chat-thread-item ${activeThread === 'cyberguard' ? 'active' : ''}`}
+                      onClick={() => { setActiveThread('cyberguard'); showToast('Switched to CYBERGUARD AI Assistant'); }}
+                    >
+                      <div className="avatar-circle" style={{ background: '#0e0f12', color: '#d4fb34', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Shield size={16} strokeWidth={2.4} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <span className="chat-thread-name">CYBERGUARD AI</span>
+                          <span className="chat-thread-badge-ai">AI</span>
+                        </div>
+                        <div className="chat-thread-msg">Threat Intelligence &amp; Protection</div>
+                      </div>
+                    </div>
+
+                    {/* Sarah Miller Thread */}
+                    <div
+                      className={`chat-thread-item ${activeThread === 'sarah' ? 'active' : ''}`}
+                      onClick={() => { setActiveThread('sarah'); showToast('Switched to Sarah Miller'); }}
+                    >
                       <div className="avatar-circle avatar-lime">SM</div>
-                      <div><div className="chat-thread-name">Sarah Miller</div><div className="chat-thread-msg">The new bento dashboard looks...</div></div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="chat-thread-name">Sarah Miller</div>
+                        <div className="chat-thread-msg">The new bento dashboard looks...</div>
+                      </div>
                     </div>
-                    <div className="chat-thread-item" onClick={() => showToast('Switched to Alex Chen')}>
+
+                    {/* Alex Chen Thread */}
+                    <div
+                      className={`chat-thread-item ${activeThread === 'alex' ? 'active' : ''}`}
+                      onClick={() => { setActiveThread('alex'); showToast('Switched to Alex Chen'); }}
+                    >
                       <div className="avatar-circle avatar-black">AC</div>
-                      <div><div className="chat-thread-name">Alex Chen</div><div className="chat-thread-msg">Weekly stats updated?</div></div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="chat-thread-name">Alex Chen</div>
+                        <div className="chat-thread-msg">Weekly stats updated?</div>
+                      </div>
                     </div>
-                    <div className="chat-thread-item" onClick={() => showToast('Switched to Design Team')}>
+
+                    {/* Design Team Thread */}
+                    <div
+                      className={`chat-thread-item ${activeThread === 'design' ? 'active' : ''}`}
+                      onClick={() => { setActiveThread('design'); showToast('Switched to Design Team'); }}
+                    >
                       <div className="avatar-circle avatar-lime" style={{ background: 'var(--color-orange)', color: '#fff' }}>DT</div>
-                      <div><div className="chat-thread-name">Design Team</div><div className="chat-thread-msg">Sprint review tomorrow 9 AM</div></div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="chat-thread-name">Design Team</div>
+                        <div className="chat-thread-msg">Sprint review tomorrow 9 AM</div>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Right panel: Active Chat Window */}
                   <div className="chat-main-card">
+                    {/* Header */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f2f4f7', paddingBottom: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 800, fontSize: '14px' }}>Sarah Miller</span>
-                        <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 700 }}>● Online</span>
+                        <span style={{ fontWeight: 800, fontSize: '14px' }}>
+                          {activeThread === 'cyberguard'
+                            ? 'CYBERGUARD AI'
+                            : activeThread === 'sarah'
+                              ? 'Sarah Miller'
+                              : activeThread === 'alex'
+                                ? 'Alex Chen'
+                                : 'Design Team'}
+                        </span>
+                        <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 700 }}>
+                          ● {activeThread === 'cyberguard' ? 'Active Threat Shield' : 'Online'}
+                        </span>
                       </div>
-                      <span style={{ fontSize: '11px', color: '#7c828d' }}>Frontend Engineer</span>
+                      <span style={{ fontSize: '11px', color: '#7c828d' }}>
+                        {activeThread === 'cyberguard'
+                          ? 'Incident Response & Cybersecurity Analyst'
+                          : activeThread === 'sarah'
+                            ? 'Frontend Engineer'
+                            : activeThread === 'alex'
+                              ? 'Product Manager'
+                              : 'Core Design System'}
+                      </span>
                     </div>
+
+                    {/* Messages Area */}
                     <div className="chat-messages-area">
-                      {messages.map(m => (
-                        <div key={m.id} className={`chat-bubble ${m.fromMe ? 'me' : 'them'}`}>
-                          <div style={{ fontSize: '10px', opacity: 0.7, marginBottom: '2px' }}>{m.sender} · {m.time}</div>
-                          {m.text}
+                      {(threadMessages[activeThread] || []).map((m) => (
+                        <div
+                          key={m.id}
+                          className={`chat-bubble ${m.fromMe ? 'me' : 'them'}${m.isReport ? ' report-bubble' : ''}`}
+                        >
+                          <div style={{ fontSize: '10px', opacity: 0.7, marginBottom: '4px' }}>
+                            {m.sender} · {m.time}
+                          </div>
+
+                          {/* Render attached file if sent */}
+                          {m.attachedFile && (
+                            <div className={`chat-bubble-file-attachment ${m.fromMe ? 'me' : 'them'}`}>
+                              {m.attachedFile.type === 'image' ? (
+                                <>
+                                  <ImageIcon size={13} />
+                                  <span>Screenshot: {m.attachedFile.name} ({m.attachedFile.size})</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Mic size={13} />
+                                  <span>Audio: {m.attachedFile.name} ({m.attachedFile.size})</span>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Message content */}
+                          {m.isReport ? (
+                            <FormattedReportBubble text={m.text} />
+                          ) : (
+                            <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+                          )}
                         </div>
                       ))}
+
+                      {/* Loading / Typing indicator */}
+                      {isChatLoading && (
+                        <div className="chat-typing-indicator">
+                          <div className="typing-dots">
+                            <span className="typing-dot"></span>
+                            <span className="typing-dot"></span>
+                            <span className="typing-dot"></span>
+                          </div>
+                          <span>{chatLoadingText || 'CYBERGUARD AI is analyzing...'}</span>
+                        </div>
+                      )}
+
+                      <div ref={chatMessagesEndRef} />
                     </div>
-                    <form className="chat-input-bar" onSubmit={handleSendMessage}>
-                      <input type="text" placeholder="Write a message to team..." value={newMsg} onChange={e => setNewMsg(e.target.value)} />
-                      <button type="submit" className="chat-send-btn"><Send size={15} /></button>
-                    </form>
+
+                    {/* Bottom Area: Input Bar & Hidden File Inputs */}
+                    <div className="chat-input-wrapper">
+                      {/* Attachment Preview Chip (if selected) */}
+                      {chatAttachedFile && (
+                        <div className="chat-attachment-bar">
+                          <div className="chat-attachment-chip">
+                            {chatAttachedFile.type === 'image' ? (
+                              <ImageIcon size={14} color="#ea580c" />
+                            ) : (
+                              <Mic size={14} color="#16a34a" />
+                            )}
+                            <span>{chatAttachedFile.name}</span>
+                            <span style={{ color: '#7c828d' }}>({chatAttachedFile.size})</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="chat-attachment-remove"
+                            onClick={handleRemoveAttachment}
+                            title="Remove attachment"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Hidden File Inputs */}
+                      <input
+                        ref={chatImageInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleChatFileSelect(e, 'image')}
+                      />
+                      <input
+                        ref={chatAudioInputRef}
+                        type="file"
+                        accept="audio/*,.wav,.mp3,.aac,.m4a,.ogg,.mp4"
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleChatFileSelect(e, 'audio')}
+                      />
+
+                      {/* Input Bar */}
+                      <form className="chat-input-bar" onSubmit={handleSendMessage}>
+                        <div className="chat-actions-group">
+                          <button
+                            type="button"
+                            className={`chat-action-icon-btn ${chatAttachedFile?.type === 'image' ? 'active' : ''}`}
+                            onClick={() => chatImageInputRef.current?.click()}
+                            title="Attach screenshot or scam image"
+                          >
+                            <ImageIcon size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            className={`chat-action-icon-btn ${isListening ? 'recording' : ''} ${chatAttachedFile?.type === 'audio' ? 'active' : ''}`}
+                            onClick={handleToggleVoiceInput}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              chatAudioInputRef.current?.click();
+                            }}
+                            title={isListening ? "Listening... Click to stop" : "Voice dictation (or right-click to upload audio)"}
+                          >
+                            <Mic size={16} />
+                          </button>
+                        </div>
+
+                        <textarea
+                          rows={1}
+                          placeholder={
+                            isListening
+                              ? 'Listening... Speak your message now'
+                              : activeThread === 'cyberguard'
+                                ? 'Paste fraud message, email, URL — or ask CyberGuard...'
+                                : 'Write a message to team...'
+                          }
+                          value={newMsg}
+                          onChange={(e) => {
+                            setNewMsg(e.target.value);
+                            e.target.style.height = 'auto';
+                            e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage(e);
+                            }
+                          }}
+                          style={{ height: '22px' }}
+                          ref={chatInputRef}
+                        />
+
+                        <button
+                          type="submit"
+                          className={`chat-send-btn ${newMsg.trim() || chatAttachedFile ? 'ready' : ''}`}
+                          disabled={isChatLoading || (!newMsg.trim() && !chatAttachedFile)}
+                          onClick={(e) => {
+                            if (!newMsg.trim() && !chatAttachedFile) {
+                              e.preventDefault();
+                              showToast('Please type a message, paste a link, or attach an image.');
+                            } else {
+                              handleSendMessage(e);
+                            }
+                          }}
+                          title="Send message (Enter)"
+                        >
+                          <Send size={15} />
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 </motion.div>
               )}
